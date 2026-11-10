@@ -174,15 +174,27 @@ SEXP datakit_missing_rank(SEXP x) {
   return out;
 }
 
-// Whether the double vector x holds a tagged NA in a group whose key is
-// NA, which vctrs groups with plain NA (their bits differ only in the
-// letter). Checked without allocating, so grouping a column with no
-// tagged NA costs no more than before. `key` is the group keys of this
-// column and `loc` each group's rows (1-based) in x, as
-// vctrs::vec_group_loc() gives them. A tagged NA is NA to is_na(), so it
-// is only in such a group; NaN groups are skipped. When those groups
-// hold more than a sixteenth of the rows, one sequential pass over x is
-// cheaper than reading their rows.
+// Part of grouping for `d[i, name, by = g] := value`. by_groups() in
+// R/assign.R groups the rows by the `by` columns with
+// vctrs::vec_group_loc(), which is fast but puts NA and .a to .z in one
+// group: to vctrs each of them is NA. By a column holding
+//
+//   1, .a, .b, NA, 1, NaN
+//
+// vctrs makes three groups: 1 (rows 1 and 5), NA (rows 2, 3 and 4) and
+// NaN (row 6). datakit wants five: 1, .a, .b, NA and NaN. So
+// by_groups() then groups again, with missing_rank() as an extra
+// column, which gives NA, .a and .b different numbers. Grouping again
+// costs time, so it is done only for a column that holds a tagged NA,
+// and this function says whether x does.
+//
+// It looks only where a tagged NA can be: among the rows of the group
+// whose key is NA (NaN's group is skipped). `key` is each group's value
+// in this column and `loc` each group's rows, numbered from 1, as
+// vec_group_loc() returns them. It allocates nothing, so a column with
+// no tagged NA costs almost nothing. When the NA group holds more than
+// a sixteenth of all rows, one pass straight through x is faster than
+// jumping to its rows one by one.
 SEXP datakit_na_groups_tagged(SEXP x, SEXP key, SEXP loc) {
   const double *p = REAL_RO(x), *k = REAL_RO(key);
   R_xlen_t n = XLENGTH(x), groups = XLENGTH(key), missing = 0;
