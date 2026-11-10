@@ -1,33 +1,44 @@
 // .a to .z in doubles, stored the way haven and dtaparser store them.
 // na_tag() and the grouping of `:=` read them here.
 //
-// A double is 64 bits: bit 63 is the sign, bits 52 to 62 the exponent
-// and bits 0 to 51 the fraction. When the exponent bits are all 1 and
-// the fraction is not 0, the double is a NaN ("not a number"). So there
-// are many NaNs, differing only in their fraction bits, and the
-// processor treats them all alike: it never reads a NaN's fraction as
-// part of a number.
+// A double is 64 bits. Written in hexadecimal and split into two 32-bit
+// halves, .a is:
 //
-// R uses those spare bits to tell NA from NaN. In hexadecimal, its NaN
-// is 7FF8000000000000 and its NA is 7FF00000000007A2: also a NaN, but
-// with 7A2 in its low word, the 32 bits 0 to 31 (R's own source writes
-// it in decimal, 1954; NA_LOW_WORD below). is.na() is TRUE
-// for both; is.nan() and R_IsNA() look at the low word to tell them
-// apart.
+//   .a  =  7FF00061  000007A2
+//          --------  --------
+//          high word low word
+//          |     |
+//          |     `- 61: the letter 'a' (its ASCII code), bits 32 to 39
+//          `- 7FF: a 0 sign bit, then all 11 exponent bits 1: a NaN
 //
-// haven's tagged NAs go one step further: R's NA with a letter's ASCII
-// code ('a' is 97, hexadecimal 61; 'z' is 122) in bits 32 to 39, so .a
-// is 7FF00061000007A2. The exponent is still all 1s, so it is still a
-// NaN, and the low word is still 7A2, so R takes it for NA: is.na() is
-// TRUE, and R code that knows nothing of letters treats it as a plain
-// NA. Only code that reads the bits, like this file, sees the letter.
+// NaN, NA and .a to .z are all NaNs ("not a number"): their exponent
+// bits are all 1. A processor never reads the rest of a NaN's bits as
+// part of a number, so those bits are free to mark what kind of NaN it
+// is:
+//
+//   NaN  =  7FF80000  00000000   low word 0
+//   NA   =  7FF00000  000007A2   low word 7A2
+//   .a   =  7FF00061  000007A2   low word 7A2, 'a' (61) in bits 32 to 39
+//   .z   =  7FF0007A  000007A2   low word 7A2, 'z' (7A) in bits 32 to 39
+//
+// - The low word tells NA from NaN. R makes its NA with 7A2 there (R's
+//   own source writes it in decimal, 1954), and is.nan() and R_IsNA()
+//   check it. NA_LOW_WORD below is that value.
+// - The letter goes in the high word, so a tagged NA's low word stays
+//   7A2 and R takes .a to .z for NA: is.na() is TRUE, and R code that
+//   knows nothing of letters treats them as plain NAs. Only code that
+//   reads bits 32 to 39, like this file, sees the letter. Plain NA has
+//   0 there.
+// - The low word alone proves nothing: an ordinary number can end in
+//   7A2 by chance. A value is NA or a tagged NA only if it is also a
+//   NaN, so every test below checks both.
 //
 // The letter survives whatever copies the value: subsetting, c(),
-// saving to .rds or Parquet. Arithmetic usually keeps it too (.a + 1
-// gives 7FF80061000007A2: bit 51 is set, the letter and 7A2 are kept),
-// but neither C nor R promises that, so the letters are for storing and
+// saving to .rds or Parquet. Arithmetic usually keeps it too (.a + 1 is
+// 7FF80061 000007A2: bit 51 is set, the letter and 7A2 are kept), but
+// neither C nor R promises that, so the letters are for storing and
 // recoding missing values, not for computing with them. The functions
-// below ignore bit 51 and so take either form for the same letter.
+// below ignore bit 51 and so read either form as the same letter.
 //
 // To look at those bits, the functions below copy the double into a
 // 64-bit integer with memcpy(), the way C allows reading one type's
