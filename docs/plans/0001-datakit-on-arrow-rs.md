@@ -39,7 +39,7 @@ The Rust parts, as estimated in the dta-parser plan:
 | file | lines | what |
 |---|---|---|
 | `profile.rs` | ~500 | the `dta` entry in the file's key-value metadata, read with serde_json: labels, formats, value label sets, storage types, notes, characteristics, categoricals holding `.a` to `.z`; a warning per bad entry; a 64 MiB cap |
-| `read.rs` | ~350 | open a file or raw vector, select columns, turn `skip`/`n_max` into a row selection that fetches only the pages needed, decode column groups on threads |
+| `read.rs` | ~350 | open a file or raw vector, select columns, turn `skip`/`n_max` into a row selection, decode column groups on threads; with the file's offset index loaded, only the pages holding the rows are fetched (see "Row windows" below) |
 | `to_r.rs` | ~450 | Arrow arrays to R vectors |
 | `from_r.rs` | ~350 | R vectors to Arrow arrays; only `NA_real_`/`NA_integer_` become nulls, tagged NaNs (`.a` to `.z`) pass through bit for bit |
 | `write.rs` | ~200 | writer properties, the profile, encoding columns in parallel |
@@ -57,17 +57,25 @@ The Rust parts, as estimated in the dta-parser plan:
    haven is loaded. The catch: the rules for combining two labelled
    columns (`bind_rows()`, `c()`, `if_else()`) live in haven. Without
    haven loaded, vctrs combines two `haven_labelled` columns only when
-   their labels are identical, and otherwise stops with an error.
+   all their attributes match: the same value labels, the same variable
+   label and the same format. Any difference stops with an error.
    **Recommendation:** datakit defines no combining rules of its own,
-   which would clash with haven's when both are loaded. Its `:=` merges
-   labels itself, and the README says to load haven, or labelled, to
-   combine labelled columns with different labels.
+   which would clash with haven's when both are loaded. Its `:=` combines
+   labelled values itself, including the per-group results of `by =`,
+   which today go through vctrs (see decision 2). The README says to
+   load haven, or labelled, for `bind_rows()` and the like on columns
+   whose attributes differ.
 2. **Which labelled classes `:=` and `datakit_by()` accept.** dtatools
    passes dtaparser's `dtaparser_labelled` columns to `:=`, so `:=`
    must keep handling them without importing dtaparser.
    **Recommendation:** treat any column with a `labels` attribute alike:
-   keep its class, change its data, and merge its `labels`. The tests
-   run on both classes.
+   keep its class, change its data, and merge its `labels`. With `by =`,
+   each group's result is joined without vctrs' combining rules: the
+   values are put in place by row, and the groups' labels are merged
+   with the same conflict checks as today (one text per code, letters
+   matched by their tag). The tests run on both classes, and once with
+   haven's namespace not loaded, on groups that return different labels,
+   variable labels and formats.
 3. **What `read_parquet()` gives for labels.** The old datakit gave
    `dtaparser_labelled`; the new one gives `haven_labelled`. The values,
    letters, labels, formats and variable labels stay the same; only the
@@ -137,6 +145,18 @@ stack, so each starts from the one before.
   compares the new reader with both.
 - **Other tools.** The readback scripts check that other readers read
   the files we write.
+
+## Row windows
+
+arrow-rs reads only the pages that hold the rows asked for when it has
+the file's offset index, which it loads separately from the footer.
+The reader asks for it. Files the old datakit, pyarrow (with
+`write_page_index`) and polars write carry one. A file without one
+still reads only the row groups that hold the rows, but within them
+arrow-rs reads every page header to find the pages, so a small window
+of a file with large row groups costs more. PR 3 tests this with a file
+source that counts the bytes it is asked for: an indexed file must
+fetch only the pages of the window.
 
 ## Not decided here
 
