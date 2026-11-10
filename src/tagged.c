@@ -1,6 +1,55 @@
 // .a to .z in doubles: R's NA (a NaN whose low word is 1954) with the
 // letter's ASCII code in bits 32 to 39, the bits haven and dtaparser
 // use. na_tag() and the grouping of `:=` read them here.
+//
+// How a double's 64 bits are laid out: bit 63 is the sign, bits 52 to
+// 62 the exponent, bits 0 to 51 the fraction. A double whose exponent
+// bits are all 1 and whose fraction is not 0 is a NaN ("not a number").
+// R's NA is one particular NaN: its low word (bits 0 to 31) is 1954.
+// haven's tagged NAs keep that low word and put a letter's ASCII code
+// ('a' is 97, 'z' is 122) in bits 32 to 39. R treats any other NaN as
+// NaN.
+//
+// To look at those bits, the functions below copy the double into a
+// 64-bit integer with memcpy(), the way C allows reading one type's
+// bytes as another; compilers turn it into a single move. Then
+// `bits >> 32` shifts bit 32 and those above it down to the bottom,
+// `& 0xff` keeps the lowest 8 bits, and `(uint32_t) bits` keeps bits 0
+// to 31.
+//
+// The functions R calls take and return SEXPs, R values (see init.c).
+// The parts of R's C interface used here:
+//
+// - TYPEOF(x): which kind of value x is: REALSXP (double vector), INTSXP
+//   (integer), LGLSXP (logical), STRSXP (character), VECSXP (list).
+// - XLENGTH(x): the number of elements, as an R_xlen_t, an integer type
+//   wide enough for vectors of more than 2^31 - 1 elements.
+// - REAL_RO(x), INTEGER_RO(x), LOGICAL_RO(x): a pointer to a vector's
+//   numbers, for reading only ("RO"). INTEGER(x) gives one to write
+//   through. R stores logicals as ints: 0, 1 or NA_LOGICAL.
+// - NA_INTEGER, NA_LOGICAL, NA_STRING: R's NA in integer, logical and
+//   character vectors. ISNAN(x) is true for every NaN, R's NA included.
+// - Rf_allocVector(type, n): a new R vector of n elements. The prefix
+//   Rf_ marks a function of R's C interface.
+// - PROTECT(x) and UNPROTECT(n): R's garbage collector frees values that
+//   nothing in R refers to, and it may run whenever R allocates memory.
+//   A vector C has just made is not yet referred to by anything R knows
+//   of, so the next allocation could free it. PROTECT(x) puts x on a
+//   list the collector leaves alone, and UNPROTECT(n) takes the last n
+//   off it again. Every function must take off all it put on before it
+//   returns. The value it returns is safe without protection, since
+//   nothing allocates between the UNPROTECT and the return, and R keeps
+//   the value once it has it.
+// - Strings: a character vector holds pointers to strings, which are R
+//   values too. Rf_mkCharLen(s, n) makes one from n bytes of C text.
+//   STRING_ELT(x, i) reads element i of a character vector, and
+//   SET_STRING_ELT(x, i, s) sets it. Elements are set only through
+//   SET_STRING_ELT, never through a pointer, because the collector must
+//   be told when one R value starts to refer to another.
+// - VECTOR_ELT(x, i): element i of a list.
+// - Rf_ScalarLogical(b): a new logical vector holding one TRUE or FALSE.
+// - Rf_error(msg): raises an R error. It does not return: R leaves the
+//   function there and takes off its PROTECTs itself.
 
 #include <stdint.h>
 #include <string.h>
@@ -8,6 +57,8 @@
 #include <Rinternals.h>
 
 // The letter of a tagged NA, or 0 for a number, NA or another NaN.
+// `tag - 'a' < 26u` tests 'a' <= tag <= 'z' in one comparison: below
+// 'a', the unsigned subtraction wraps round to a huge number.
 static inline char letter_of(double x) {
   uint64_t bits;
   memcpy(&bits, &x, sizeof bits);
@@ -17,7 +68,9 @@ static inline char letter_of(double x) {
 
 // 1 if the double's bits are a tagged NA. Branchless (& and an unsigned
 // range test), so the loops below vectorise or at least do not
-// mispredict.
+// mispredict. `(bits >> 52) & 0x7ff` is the exponent; all 1s means a
+// NaN or an infinity, and the low word 1954 rules out infinity, whose
+// fraction is 0.
 static inline unsigned tagged(const double *x) {
   uint64_t bits;
   memcpy(&bits, x, sizeof bits);
@@ -40,6 +93,8 @@ SEXP dta_na_tag(SEXP x) {
   R_xlen_t n = XLENGTH(x);
   const double *p = REAL_RO(x);
   SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  // The 26 one-letter strings, made once, so that the loop below copies
+  // one of them rather than making a string for each element.
   SEXP letters = PROTECT(Rf_allocVector(STRSXP, 26));
   for (int i = 0; i < 26; i++) {
     char c = (char) ('a' + i);
@@ -65,7 +120,7 @@ SEXP dta_missing_rank(SEXP x) {
     const double *p = REAL_RO(x);
     for (R_xlen_t i = 0; i < n; i++) {
       char c = letter_of(p[i]);
-      o[i] = c ? c - 'a' + 2 : ISNAN(p[i]);
+      o[i] = c ? c - 'a' + 2 : ISNAN(p[i]); // 'a' is 2; ISNAN gives 1 or 0
     }
     break;
   }
@@ -79,7 +134,7 @@ SEXP dta_missing_rank(SEXP x) {
     for (R_xlen_t i = 0; i < n; i++) o[i] = p[i] == NA_LOGICAL;
     break;
   }
-  default:
+  default: // Rf_error() leaves here, so UNPROTECT is not needed
     Rf_error("missing_rank: x must be a double, integer or logical vector");
   }
   UNPROTECT(1);
@@ -111,6 +166,7 @@ SEXP dta_na_groups_tagged(SEXP x, SEXP key, SEXP loc) {
     if (!is_na(k[g])) continue;
     SEXP rows = VECTOR_ELT(loc, g);
     const int *r = INTEGER_RO(rows);
+    // R numbers rows from 1, C from 0: row r[i] is p[r[i] - 1].
     for (R_xlen_t i = 0, m = XLENGTH(rows); i < m; i++) found |= tagged(p + r[i] - 1);
   }
   return Rf_ScalarLogical(found != 0);
