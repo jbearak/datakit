@@ -10,20 +10,21 @@
 //
 // R uses those spare bits to tell NA from NaN. In hexadecimal, its NaN
 // is 7FF8000000000000 and its NA is 7FF00000000007A2: also a NaN, but
-// with 1954 (7A2) in its low word, the 32 bits 0 to 31. is.na() is TRUE
+// with 7A2 in its low word, the 32 bits 0 to 31 (R's own source writes
+// it in decimal, 1954; NA_LOW_WORD below). is.na() is TRUE
 // for both; is.nan() and R_IsNA() look at the low word to tell them
 // apart.
 //
 // haven's tagged NAs go one step further: R's NA with a letter's ASCII
 // code ('a' is 97, hexadecimal 61; 'z' is 122) in bits 32 to 39, so .a
 // is 7FF00061000007A2. The exponent is still all 1s, so it is still a
-// NaN, and the low word is still 1954, so R takes it for NA: is.na() is
+// NaN, and the low word is still 7A2, so R takes it for NA: is.na() is
 // TRUE, and R code that knows nothing of letters treats it as a plain
 // NA. Only code that reads the bits, like this file, sees the letter.
 //
 // The letter survives whatever copies the value: subsetting, c(),
 // saving to .rds or Parquet. Arithmetic usually keeps it too (.a + 1
-// gives 7FF80061000007A2: bit 51 is set, the letter and 1954 are kept),
+// gives 7FF80061000007A2: bit 51 is set, the letter and 7A2 are kept),
 // but neither C nor R promises that, so the letters are for storing and
 // recoding missing values, not for computing with them. The functions
 // below ignore bit 51 and so take either form for the same letter.
@@ -74,6 +75,9 @@
 #include <R.h>
 #include <Rinternals.h>
 
+// The low word of R's NA, and so of every tagged NA.
+#define NA_LOW_WORD 0x7A2u
+
 // The letter of a tagged NA, or 0 for a number, NA or another NaN.
 // `tag - 'a' < 26u` tests 'a' <= tag <= 'z' in one comparison: below
 // 'a', the unsigned subtraction wraps round to a huge number.
@@ -81,27 +85,27 @@ static inline char letter_of(double x) {
   uint64_t bits;
   memcpy(&bits, &x, sizeof bits);
   unsigned tag = (unsigned) ((bits >> 32) & 0xff);
-  return ISNAN(x) && (uint32_t) bits == 1954 && tag - 'a' < 26u ? (char) tag : 0;
+  return ISNAN(x) && (uint32_t) bits == NA_LOW_WORD && tag - 'a' < 26u ? (char) tag : 0;
 }
 
 // 1 if the double's bits are a tagged NA. Branchless (& and an unsigned
 // range test), so the loops below vectorise or at least do not
 // mispredict. `(bits >> 52) & 0x7ff` is the exponent; all 1s means a
-// NaN or an infinity, and the low word 1954 rules out infinity, whose
+// NaN or an infinity, and the low word 7A2 rules out infinity, whose
 // fraction is 0.
 static inline unsigned tagged(const double *x) {
   uint64_t bits;
   memcpy(&bits, x, sizeof bits);
-  return (((bits >> 52) & 0x7ff) == 0x7ff) & ((uint32_t) bits == 1954) &
+  return (((bits >> 52) & 0x7ff) == 0x7ff) & ((uint32_t) bits == NA_LOW_WORD) &
          ((uint32_t) ((bits >> 32) & 0xff) - 'a' < 26u);
 }
 
 // R_IsNA(), inlined, since it runs once per group: a NaN whose low
-// word is 1954, true for NA and .a to .z, false for NaN.
+// word is 7A2, true for NA and .a to .z, false for NaN.
 static inline int is_na(double x) {
   uint64_t bits;
   memcpy(&bits, &x, sizeof bits);
-  return ISNAN(x) && (uint32_t) bits == 1954;
+  return ISNAN(x) && (uint32_t) bits == NA_LOW_WORD;
 }
 
 // The letter of each element of a double vector ("a" to "z"), NA where
