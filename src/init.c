@@ -17,9 +17,11 @@
 //   STRSXP for character.
 // - DllInfo: R's record of a shared library it has loaded, here
 //   datakit.so (datakit.dll on Windows), which holds the compiled C.
-// - DL_FUNC: a function pointer with no particular signature. The table
-//   below stores every function as one, and R calls each with the
-//   number of arguments given next to it.
+// - DL_FUNC: a stand-in type for function pointers. C gives a pointer
+//   to a one-argument function a different type from a pointer to a
+//   three-argument one, and an array can hold only one type, so the
+//   table below stores every function as a DL_FUNC. When R calls one,
+//   it uses the argument count in the same row to call it correctly.
 
 #include <R.h>              // R's basic C interface
 #include <Rinternals.h>     // SEXP and the functions that work on R values
