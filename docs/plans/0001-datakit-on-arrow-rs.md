@@ -12,9 +12,10 @@ make it shorter there:
 - polars support is left out. An issue here will track it, in case you
   want it later.
 
-Labelled columns get haven's class, `haven_labelled`, built directly,
-so haven does not need to be installed. When it is, datakit loads its
-namespace, so labelled columns print and combine as haven's do.
+Labelled columns get a class of datakit's own followed by haven's,
+`c("datakit_labelled", "haven_labelled", "vctrs_vctr", type)`, built
+directly, so haven does not need to be installed or loaded. datakit's
+rules come first; haven's functions still recognise the column.
 
 What stays the same: `d[i, name, by = g] := value`, `datakit_by()`,
 `read_parquet()`, `read_parquet_info()` and `save_parquet()`, with the
@@ -23,7 +24,7 @@ every file the old datakit wrote reads back the same.
 
 ## What the package will hold
 
-About 3,100 lines in all, against about 23,800 lines of Parquet and
+About 3,330 lines in all, against about 23,800 lines of Parquet and
 Arrow code in dta-parser plus datakit's 2,485 lines of R:
 
 | part | lines (estimate) |
@@ -33,6 +34,7 @@ Arrow code in dta-parser plus datakit's 2,485 lines of R:
 | `R/parquet.R` | ~400 |
 | `R/assign.R` (`:=`) | ~360 |
 | `R/by.R` (`datakit_by()`) | ~90 |
+| `R/labelled.R` (the labelled class, from dtaparser's) | ~230 |
 | small files | ~30 |
 
 The Rust parts, as estimated in the dta-parser plan:
@@ -50,48 +52,58 @@ The Rust parts, as estimated in the dta-parser plan:
 
 ## Decisions to check before building
 
-1. **`haven_labelled` without depending on haven.** datakit builds the class
-   (`c("haven_labelled", "vctrs_vctr", "double")`, with `labels` and
-   `label` attributes) and gives `.a` to `.z` as haven's tagged NAs,
-   which use the same bits as dtaparser's. Other packages that work
-   with labelled data (haven's `as_factor()` and `zap_labels()`,
-   labelled, gtsummary, sjlabelled) recognise the class. The catch: the
-   class's methods live in haven and are registered only when haven's
-   namespace is loaded. That covers printing (a tibble shows
-   `<dbl+lbl>` and `1 [Yes]`, against `<hvn_lbll>` and `1` without
-   haven) and the rules for combining two labelled columns
-   (`bind_rows()`, `c()`, `if_else()`). Without haven loaded, vctrs
-   combines two `haven_labelled` columns only when all their attributes
-   match: the same value labels, the same variable label and the same
-   format. Any difference stops with an error.
-   **Decision:** haven is in Suggests, and datakit's `.onLoad` loads
-   haven's namespace when haven is installed
-   (`requireNamespace("haven", quietly = TRUE)`). It does not attach
-   haven. This took 93 ms in a fresh R session, and 8 ms once tibble
-   was loaded. datakit defines no methods of its own for the class,
-   which would clash with haven's. Without haven installed, everything
-   works except haven's printing and combining columns whose attributes
-   differ; the README says so. datakit's `:=` combines labelled
-   values itself either way, including the per-group results of `by =`, which
-   today go through vctrs (see decision 2). A class of datakit's own
-   (`datakit_labelled`) was considered and rejected: it would need its
-   own printing, combining, casting, arithmetic and summary methods (346
-   lines and 26 methods in dtaparser's `labelled.R` for
-   `dtaparser_labelled`), and the packages above would not recognise
-   it.
+1. **The labelled class.** **Decision:** labelled columns are
+   `c("datakit_labelled", "haven_labelled", "vctrs_vctr", type)`, with
+   `labels` and `label` attributes, and `.a` to `.z` as haven's tagged
+   NAs, which use the same bits as dtaparser's. haven is in Suggests
+   only; datakit never loads it.
+   - **Why a class of our own.** haven's methods for `haven_labelled`
+     are registered only when haven is loaded. Without them, a labelled
+     column with integer codes (byte, int and long columns) cannot take
+     `.a` to `.z` or a fraction: `x[x == 98] <- tagged_na("d")` is an
+     error even with haven loaded, and `if_else()`, `case_when()` and
+     `c()` are errors when haven is not loaded. Combining two columns
+     whose value labels, variable label or format differ is also an
+     error without haven. datakit cannot add these rules for
+     `haven_labelled` itself: haven defines them too, and whichever
+     package loaded last would replace the other's.
+   - **Why haven's class second.** R tries the first class's rules
+     first, so datakit's widening and combining apply, loaded haven or
+     not; haven's functions find `haven_labelled` further down and still
+     work. A quick test (2026-11-10, haven 2.5.5, vctrs 0.7.3) with
+     minimal rules: `if_else()` and `case_when()` widened integer codes
+     to doubles with haven loaded and not loaded, and `haven::as_factor()`,
+     `zap_labels()` and `print_labels()` worked on the column.
+   - **What it costs.** About 230 lines, taken from dtaparser's
+     `labelled.R` (printing, combining, casting, arithmetic, summaries)
+     with its tests, plus a `[<-` method that turns integer codes into
+     doubles when given a value an integer cannot hold. PR 2 adds tests
+     for: assigning `.a` to `.z` into integer codes by `[<-`,
+     `if_else()` and `case_when()`, with haven loaded and not; combining
+     with a plain `haven_labelled` column (one haven read) both ways;
+     and haven's `as_factor()`, `zap_labels()`, `print_labels()` and
+     `na_tag()` on datakit's columns.
+   - **Considered:** plain `haven_labelled`, with datakit loading haven's
+     namespace when haven is installed. Smaller, but `x[i] <- .d` on
+     integer codes stays an error, and without haven installed so do
+     `if_else()`, `case_when()` and combining. A class of datakit's own
+     alone would solve those, but haven's functions would not recognise
+     it.
 2. **Which labelled classes `:=` and `datakit_by()` accept.** dtatools
    passes dtaparser's `dtaparser_labelled` columns to `:=`, so `:=`
    must keep handling them without importing dtaparser.
    **Recommendation:** treat any column with a `labels` attribute alike:
-   keep its class, change its data, and merge its `labels`. With `by =`,
+   keep its class (`datakit_labelled`, `dtaparser_labelled` or
+   `haven_labelled`), change its data, and merge its `labels`. With `by =`,
    each group's result is joined without vctrs' combining rules: the
    values are put in place by row, and the groups' labels are merged
    with the same conflict checks as today (one text per code, letters
-   matched by their tag). The tests run on both classes, and once in an
+   matched by their tag). The tests run on all three classes, and once in an
    R session where haven cannot be loaded, on groups that return different labels,
    variable labels and formats.
 3. **What `read_parquet()` gives for labels.** The old datakit gave
-   `dtaparser_labelled`; the new one gives `haven_labelled`. The values,
+   `dtaparser_labelled`; the new one gives datakit's class (decision 1),
+   which is also a `haven_labelled`. The values,
    letters, labels, formats and variable labels stay the same; only the
    class name changes. Code that tests `inherits(x,
    "dtaparser_labelled")` on what `read_parquet()` returns must change.
@@ -121,11 +133,13 @@ Each step is one pull request that stops ready for you to merge. They
 stack, so each starts from the one before.
 
 1. **This plan.**
-2. **`:=` and `datakit_by()` without dtaparser.** Labelled columns are
-   handled through their `label` and `labels` attributes (decision 2),
-   with a small `na_tag` of the package's own. The tests port
-   `test-assign.R`, `test-by.R` and `test-labelled.R`, run on both
-   `haven_labelled` and `dtaparser_labelled` columns. CI also runs
+2. **The labelled class, `:=` and `datakit_by()` without dtaparser.**
+   The class of decision 1, from dtaparser's `labelled.R` and its tests,
+   with the widening `[<-` and the tests listed there. Labelled columns
+   are handled in `:=` through their `label` and `labels` attributes
+   (decision 2), with a small `na_tag` of the package's own. The tests
+   port `test-assign.R`, `test-by.R` and `test-labelled.R`, run on
+   `datakit_labelled`, `haven_labelled` and `dtaparser_labelled` columns. CI also runs
    dtatools' tests against this datakit.
 3. **The Parquet reader on arrow-rs.** `read_parquet()` and
    `read_parquet_info()`, with the tests ported from `test-parquet.R`,
