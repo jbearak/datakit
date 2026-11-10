@@ -1,14 +1,32 @@
-// .a to .z in doubles: R's NA (a NaN whose low word is 1954) with the
-// letter's ASCII code in bits 32 to 39, the bits haven and dtaparser
-// use. na_tag() and the grouping of `:=` read them here.
+// .a to .z in doubles, stored the way haven and dtaparser store them.
+// na_tag() and the grouping of `:=` read them here.
 //
-// How a double's 64 bits are laid out: bit 63 is the sign, bits 52 to
-// 62 the exponent, bits 0 to 51 the fraction. A double whose exponent
-// bits are all 1 and whose fraction is not 0 is a NaN ("not a number").
-// R's NA is one particular NaN: its low word (bits 0 to 31) is 1954.
-// haven's tagged NAs keep that low word and put a letter's ASCII code
-// ('a' is 97, 'z' is 122) in bits 32 to 39. R treats any other NaN as
-// NaN.
+// A double is 64 bits: bit 63 is the sign, bits 52 to 62 the exponent
+// and bits 0 to 51 the fraction. When the exponent bits are all 1 and
+// the fraction is not 0, the double is a NaN ("not a number"). So there
+// are many NaNs, differing only in their fraction bits, and the
+// processor treats them all alike: it never reads a NaN's fraction as
+// part of a number.
+//
+// R uses those spare bits to tell NA from NaN. In hexadecimal, its NaN
+// is 7FF8000000000000 and its NA is 7FF00000000007A2: also a NaN, but
+// with 1954 (7A2) in its low word, the 32 bits 0 to 31. is.na() is TRUE
+// for both; is.nan() and R_IsNA() look at the low word to tell them
+// apart.
+//
+// haven's tagged NAs go one step further: R's NA with a letter's ASCII
+// code ('a' is 97, hexadecimal 61; 'z' is 122) in bits 32 to 39, so .a
+// is 7FF00061000007A2. The exponent is still all 1s, so it is still a
+// NaN, and the low word is still 1954, so R takes it for NA: is.na() is
+// TRUE, and R code that knows nothing of letters treats it as a plain
+// NA. Only code that reads the bits, like this file, sees the letter.
+//
+// The letter survives whatever copies the value: subsetting, c(),
+// saving to .rds or Parquet. Arithmetic usually keeps it too (.a + 1
+// gives 7FF80061000007A2: bit 51 is set, the letter and 1954 are kept),
+// but neither C nor R promises that, so the letters are for storing and
+// recoding missing values, not for computing with them. The functions
+// below ignore bit 51 and so take either form for the same letter.
 //
 // To look at those bits, the functions below copy the double into a
 // 64-bit integer with memcpy(), the way C allows reading one type's
