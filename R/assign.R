@@ -183,7 +183,7 @@ by_groups <- function(keys) {
   groups <- vctrs::vec_group_loc(keys)
   cols <- unclass(keys)
   tagged <- vapply(seq_along(cols), function(j) {
-    is.double(cols[[j]]) && .Call(C_dta_na_groups_tagged, cols[[j]], groups$key[[j]], groups$loc)
+    is.double(cols[[j]]) && .Call(C_na_groups_tagged, cols[[j]], groups$key[[j]], groups$loc)
   }, NA)
   if (!any(tagged)) return(groups$loc)
   ranks <- lapply(cols[tagged], missing_rank)

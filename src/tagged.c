@@ -121,7 +121,7 @@ static inline int is_na(double x) {
 
 // The letter of each element of a double vector ("a" to "z"), NA where
 // it is a number, NA or NaN. Names are left to the R caller.
-SEXP dta_na_tag(SEXP x) {
+SEXP datakit_na_tag(SEXP x) {
   if (TYPEOF(x) != REALSXP) Rf_error("na_tag: x must be a double vector");
   R_xlen_t n = XLENGTH(x);
   const double *p = REAL_RO(x);
@@ -144,7 +144,7 @@ SEXP dta_na_tag(SEXP x) {
 // Each element's place among the missing values, as a plain integer
 // vector: 0 for a number, 1 for NA or NaN, 2 to 27 for .a to .z. `:=`
 // groups by it so that each letter is a group of its own.
-SEXP dta_missing_rank(SEXP x) {
+SEXP datakit_missing_rank(SEXP x) {
   R_xlen_t n = XLENGTH(x);
   SEXP out = PROTECT(Rf_allocVector(INTSXP, n));
   int *o = INTEGER(out);
@@ -183,7 +183,7 @@ SEXP dta_missing_rank(SEXP x) {
 // is only in such a group; NaN groups are skipped. When those groups
 // hold more than a sixteenth of the rows, one sequential pass over x is
 // cheaper than reading their rows.
-SEXP dta_na_groups_tagged(SEXP x, SEXP key, SEXP loc) {
+SEXP datakit_na_groups_tagged(SEXP x, SEXP key, SEXP loc) {
   const double *p = REAL_RO(x), *k = REAL_RO(key);
   R_xlen_t n = XLENGTH(x), groups = XLENGTH(key), missing = 0;
   for (R_xlen_t g = 0; g < groups; g++) {

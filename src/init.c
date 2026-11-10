@@ -1,6 +1,6 @@
 // How R finds datakit's C functions.
 //
-// R code calls C through .Call(), as in `.Call(C_dta_na_tag, x)` in
+// R code calls C through .Call(), as in `.Call(C_na_tag, x)` in
 // R/tagged.R. For that to work, R needs a list of the C functions it may
 // call: each one's name, address and number of arguments. This file
 // gives R that list when the package loads. The functions themselves
@@ -29,19 +29,25 @@
 
 // The functions R may call, defined in tagged.c. They are declared
 // here so that the table below can take their addresses.
-SEXP dta_na_tag(SEXP x);
-SEXP dta_missing_rank(SEXP x);
-SEXP dta_na_groups_tagged(SEXP x, SEXP key, SEXP loc);
+//
+// Each has two names. Its C name, here, starts with datakit_: the
+// compiled library shows C names to everything else loaded into R, so
+// a plain `na_tag` could be mistaken for another library's function of
+// the same name. The name R knows it by, in the table below, needs no
+// prefix: it is visible only inside datakit.
+SEXP datakit_na_tag(SEXP x);
+SEXP datakit_missing_rank(SEXP x);
+SEXP datakit_na_groups_tagged(SEXP x, SEXP key, SEXP loc);
 
 // The list R reads: one row per function, giving the name R knows it
 // by, its address and its number of arguments. The row of NULLs marks
 // the end. In NAMESPACE, `useDynLib(datakit, .registration = TRUE,
 // .fixes = "C_")` makes an R object for each row, named with the prefix
-// C_ (C_dta_na_tag and so on), which the R code passes to .Call().
+// C_ (C_na_tag and so on), which the R code passes to .Call().
 static const R_CallMethodDef routines[] = {
-  {"dta_na_tag", (DL_FUNC) &dta_na_tag, 1},
-  {"dta_missing_rank", (DL_FUNC) &dta_missing_rank, 1},
-  {"dta_na_groups_tagged", (DL_FUNC) &dta_na_groups_tagged, 3},
+  {"na_tag", (DL_FUNC) &datakit_na_tag, 1},
+  {"missing_rank", (DL_FUNC) &datakit_missing_rank, 1},
+  {"na_groups_tagged", (DL_FUNC) &datakit_na_groups_tagged, 3},
   {NULL, NULL, 0}
 };
 
@@ -55,8 +61,8 @@ void R_init_datakit(DllInfo *dll) {
   // R may call only the functions in the list: it will not search the
   // library for any other name.
   R_useDynamicSymbols(dll, FALSE);
-  // .Call() must be given the R object (C_dta_na_tag), not the name as
-  // a string ("dta_na_tag"). The object carries the address, so R does
+  // .Call() must be given the R object (C_na_tag), not the name as
+  // a string ("na_tag"). The object carries the address, so R does
   // not look the name up on each call, and a call can reach only this
   // package's functions, never another package's of the same name.
   R_forceSymbols(dll, TRUE);

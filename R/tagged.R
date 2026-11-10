@@ -38,7 +38,7 @@
 #' @export
 na_tag <- function(x) {
   if (is.double(x)) {
-    out <- .Call(C_dta_na_tag, x)
+    out <- .Call(C_na_tag, x)
   } else if (is.integer(x) || is.logical(x) || is.factor(x)) {
     out <- rep(NA_character_, length(x))
   } else {
@@ -84,5 +84,5 @@ missing_rank <- function(x) {
   if (is.factor(x) || !(is.double(x) || is.integer(x) || is.logical(x))) {
     stop("x must be a double, integer, logical, Date, POSIXct or labelled vector, not ", class(x)[1], call. = FALSE)
   }
-  .Call(C_dta_missing_rank, x)
+  .Call(C_missing_rank, x)
 }
