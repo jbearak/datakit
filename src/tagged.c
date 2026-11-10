@@ -188,13 +188,14 @@ SEXP datakit_missing_rank(SEXP x) {
 // costs time, so it is done only for a column that holds a tagged NA,
 // and this function says whether x does.
 //
-// It looks only where a tagged NA can be: among the rows of the group
-// whose key is NA (NaN's group is skipped). `key` is each group's value
-// in this column and `loc` each group's rows, numbered from 1, as
-// vec_group_loc() returns them. It allocates nothing, so a column with
-// no tagged NA costs almost nothing. When the NA group holds more than
-// a sixteenth of all rows, one pass straight through x is faster than
-// jumping to its rows one by one.
+// It looks only where a tagged NA can be: among the rows of the groups
+// whose key in this column is NA (one group, or with several `by`
+// columns one per combination of the others; NaN's groups are skipped).
+// `key` is each group's value in this column and `loc` each group's
+// rows, numbered from 1, as vec_group_loc() returns them. It allocates
+// nothing, so a column with no tagged NA costs almost nothing. When
+// those groups hold more than a sixteenth of all rows, one pass straight
+// through x is faster than jumping to their rows one by one.
 SEXP datakit_na_groups_tagged(SEXP x, SEXP key, SEXP loc) {
   const double *p = REAL_RO(x), *k = REAL_RO(key);
   R_xlen_t n = XLENGTH(x), groups = XLENGTH(key), missing = 0;
