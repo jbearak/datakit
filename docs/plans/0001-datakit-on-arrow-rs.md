@@ -150,8 +150,8 @@ stack, so each starts from the one before.
 
 arrow-rs reads only the pages that hold the rows asked for when it has
 the file's offset index, which it loads separately from the footer.
-The reader asks for it. Files the old datakit, pyarrow (with
-`write_page_index`) and polars write carry one. A file without one
+The reader asks for it. Files the old datakit wrote carry one, as do
+pyarrow's with `write_page_index` and polars' with statistics. A file without one
 still reads only the row groups that hold the rows, but within them
 arrow-rs reads every page header to find the pages, so a small window
 of a file with large row groups costs more. PR 3 tests this with a file
