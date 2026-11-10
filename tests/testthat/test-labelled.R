@@ -96,3 +96,14 @@ test_that("unclassed codes with a labels attribute are labelled too", {
   expect_identical(attributes(d$v), list(labels = c(No = 0, Yes = 1), label = "V"))
   expect_identical(na_tag(unclass(d$v)), c(NA, "a"))
 })
+
+test_that("codes of another class with a labels attribute are labelled too", {
+  # decision 2 of plan 0001: the labels attribute decides, whatever the class.
+  d <- tibble::tibble(x = structure(c(1, 2, tagged_na("a")), class = "custom", labels = c(Yes = 1, No = 2)))
+  d[1, x] := "No"
+  expect_identical(class(d$x), "custom")
+  expect_identical(unclass(d$x)[1], 2)
+  expect_identical(attr(d$x, "labels"), c(Yes = 1, No = 2))
+  b <- datakit_by(d$x)
+  expect_identical(b[[2]], c(NA, NA, "a"))
+})

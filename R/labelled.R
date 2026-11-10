@@ -103,11 +103,11 @@ with_labels <- function(x, labels, label = NULL) {
 LABELLED <- c("datakit_labelled", "haven_labelled", "dtaparser_labelled")
 
 # Whether x is a labelled column: integer or double codes of one of the
-# labelled classes (whose `labels` may be missing, as no labels), or
-# with no class and a `labels` attribute.
+# labelled classes (whose `labels` may be missing, as no labels), or of
+# any other class but factor with a `labels` attribute.
 is_labelled <- function(x) {
-  (is.double(x) || is.integer(x)) &&
-    (inherits(x, LABELLED) || (is.null(oldClass(x)) && !is.null(attr(x, "labels", exact = TRUE))))
+  (is.double(x) || is.integer(x)) && !is.factor(x) &&
+    (inherits(x, LABELLED) || !is.null(attr(x, "labels", exact = TRUE)))
 }
 
 checked_labels <- function(labels) {

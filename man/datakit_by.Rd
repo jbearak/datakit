@@ -19,8 +19,9 @@ A tibble with, for each argument in order, the column, and
 right after a column that can hold a letter, a character column
 \verb{<name><.suffix>}: \code{"a"} to \code{"z"} for \code{.a} to \code{.z}, \code{NA} for numbers
 and \code{.}. The columns that can hold a letter are doubles with no
-class, labelled doubles (\code{datakit_labelled}, \code{haven_labelled} and
-\code{dtaparser_labelled}), \code{Date} and \code{POSIXct}; others (integers, text, factors, \code{integer64},
+class, labelled doubles (\code{datakit_labelled}, \code{haven_labelled},
+\code{dtaparser_labelled}, or any class with a \code{labels} attribute), \code{Date}
+and \code{POSIXct}; others (integers, text, factors, \code{integer64},
 \code{difftime}) get no letter column. The letter column is there even
 when no row holds a letter, so a script gives the same columns for
 every file. Two columns of the result with one name are an error; a
