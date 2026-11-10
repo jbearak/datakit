@@ -1,0 +1,7 @@
+^.*\.Rproj$
+^\.github$
+^docs$
+^AGENTS\.md$
+^CLAUDE\.md$
+^tools$
+^LICENSE$
