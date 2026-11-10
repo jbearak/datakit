@@ -38,8 +38,8 @@
 #'   `<name><.suffix>`: `"a"` to `"z"` for `.a` to `.z`, `NA` for numbers
 #'   and `.`. The columns that can hold a letter are doubles with no
 #'   class, labelled doubles (`datakit_labelled`, `haven_labelled`,
-#'   `dtaparser_labelled`, or any class with a `labels` attribute), `Date`
-#'   and `POSIXct`; others (integers, text, factors, `integer64`,
+#'   `dtaparser_labelled`, or another class with a `labels` attribute
+#'   other than a date, time or duration), `Date` and `POSIXct`; others (integers, text, factors, `integer64`,
 #'   `difftime`) get no letter column. The letter column is there even
 #'   when no row holds a letter, so a script gives the same columns for
 #'   every file. Two columns of the result with one name are an error; a
@@ -80,8 +80,8 @@ datakit_by <- function(..., .suffix = "_letter") {
   tibble::new_tibble(cols, nrow = vctrs::vec_size(cols[[1]]))
 }
 
-# A double with no class, a labelled double (any class with labels,
-# datakit's, haven's or dtaparser's among them), a Date or a POSIXct: the types
+# A double with no class, a labelled double (is_labelled()), a Date or a
+# POSIXct: the types
 # whose values can be R's tagged NAs.
 can_hold_letter <- function(x) {
   is.double(x) && (is.null(oldClass(x)) || inherits(x, c("Date", "POSIXct")) || is_labelled(x))

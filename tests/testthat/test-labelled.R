@@ -107,3 +107,12 @@ test_that("codes of another class with a labels attribute are labelled too", {
   b <- datakit_by(d$x)
   expect_identical(b[[2]], c(NA, NA, "a"))
 })
+
+test_that("a labelled duration keeps its unit conversion", {
+  # difftime has its own rules (here, hours into seconds); a labels
+  # attribute does not make it a labelled column.
+  d <- tibble::tibble(x = structure(as.difftime(c(10, 20), units = "secs"), labels = c(Ten = 10)))
+  d[1, x] := as.difftime(1, units = "hours")
+  expect_identical(as.numeric(d$x, units = "secs"), c(3600, 20))
+  expect_false(datakit:::is_labelled(d$x))
+})

@@ -104,11 +104,16 @@ LABELLED <- c("datakit_labelled", "haven_labelled", "dtaparser_labelled")
 
 # Whether x is a labelled column: integer or double codes of one of the
 # labelled classes (whose `labels` may be missing, as no labels), or of
-# any other class but factor with a `labels` attribute.
+# another class with a `labels` attribute, except classes whose values
+# carry a unit or a meaning of their own (dates, times, durations,
+# factors, 64-bit integers, units), which keep their own rules.
 is_labelled <- function(x) {
-  (is.double(x) || is.integer(x)) && !is.factor(x) &&
-    (inherits(x, LABELLED) || !is.null(attr(x, "labels", exact = TRUE)))
+  (is.double(x) || is.integer(x)) &&
+    (inherits(x, LABELLED) ||
+       (!is.null(attr(x, "labels", exact = TRUE)) && !inherits(x, VALUE_CLASSES)))
 }
+
+VALUE_CLASSES <- c("factor", "Date", "POSIXt", "difftime", "integer64", "units", "hms")
 
 checked_labels <- function(labels) {
   if (!(is.double(labels) || is.integer(labels)) || is.object(labels)) {
