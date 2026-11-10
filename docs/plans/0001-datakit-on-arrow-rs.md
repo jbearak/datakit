@@ -13,7 +13,8 @@ make it shorter there:
   want it later.
 
 Labelled columns get haven's class, `haven_labelled`, built directly,
-so haven does not need to be installed or loaded.
+so haven does not need to be installed. When it is, datakit loads its
+namespace, so labelled columns print and combine as haven's do.
 
 What stays the same: `d[i, name, by = g] := value`, `datakit_by()`,
 `read_parquet()`, `read_parquet_info()` and `save_parquet()`, with the
@@ -49,22 +50,35 @@ The Rust parts, as estimated in the dta-parser plan:
 
 ## Decisions to check before building
 
-1. **`haven_labelled` without haven.** datakit builds the class
+1. **`haven_labelled` without depending on haven.** datakit builds the class
    (`c("haven_labelled", "vctrs_vctr", "double")`, with `labels` and
    `label` attributes) and gives `.a` to `.z` as haven's tagged NAs,
-   which use the same bits as dtaparser's. haven's own functions
-   (`na_tag()`, `as_factor()`, `zap_labels()`) work on the result once
-   haven is loaded. The catch: the rules for combining two labelled
-   columns (`bind_rows()`, `c()`, `if_else()`) live in haven. Without
-   haven loaded, vctrs combines two `haven_labelled` columns only when
-   all their attributes match: the same value labels, the same variable
-   label and the same format. Any difference stops with an error.
-   **Recommendation:** datakit defines no combining rules of its own,
-   which would clash with haven's when both are loaded. Its `:=` combines
-   labelled values itself, including the per-group results of `by =`,
-   which today go through vctrs (see decision 2). The README says to
-   load haven, or labelled, for `bind_rows()` and the like on columns
-   whose attributes differ.
+   which use the same bits as dtaparser's. Other packages that work
+   with labelled data (haven's `as_factor()` and `zap_labels()`,
+   labelled, gtsummary, sjlabelled) recognise the class. The catch: the
+   class's methods live in haven and are registered only when haven's
+   namespace is loaded. That covers printing (a tibble shows
+   `<dbl+lbl>` and `1 [Yes]`, against `<hvn_lbll>` and `1` without
+   haven) and the rules for combining two labelled columns
+   (`bind_rows()`, `c()`, `if_else()`). Without haven loaded, vctrs
+   combines two `haven_labelled` columns only when all their attributes
+   match: the same value labels, the same variable label and the same
+   format. Any difference stops with an error.
+   **Decision:** haven is in Suggests, and datakit's `.onLoad` loads
+   haven's namespace when haven is installed
+   (`requireNamespace("haven", quietly = TRUE)`). It does not attach
+   haven. This took 93 ms in a fresh R session, and 8 ms once tibble
+   was loaded. datakit defines no methods of its own for the class,
+   which would clash with haven's. Without haven installed, everything
+   works except haven's printing and combining columns whose attributes
+   differ; the README says so. datakit's `:=` combines labelled
+   values itself either way, including the per-group results of `by =`, which
+   today go through vctrs (see decision 2). A class of datakit's own
+   (`datakit_labelled`) was considered and rejected: it would need its
+   own printing, combining, casting, arithmetic and summary methods (346
+   lines and 26 methods in dtaparser's `labelled.R` for
+   `dtaparser_labelled`), and the packages above would not recognise
+   it.
 2. **Which labelled classes `:=` and `datakit_by()` accept.** dtatools
    passes dtaparser's `dtaparser_labelled` columns to `:=`, so `:=`
    must keep handling them without importing dtaparser.
@@ -73,8 +87,8 @@ The Rust parts, as estimated in the dta-parser plan:
    each group's result is joined without vctrs' combining rules: the
    values are put in place by row, and the groups' labels are merged
    with the same conflict checks as today (one text per code, letters
-   matched by their tag). The tests run on both classes, and once with
-   haven's namespace not loaded, on groups that return different labels,
+   matched by their tag). The tests run on both classes, and once in an
+   R session where haven cannot be loaded, on groups that return different labels,
    variable labels and formats.
 3. **What `read_parquet()` gives for labels.** The old datakit gave
    `dtaparser_labelled`; the new one gives `haven_labelled`. The values,
